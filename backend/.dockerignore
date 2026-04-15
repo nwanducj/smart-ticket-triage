@@ -1,0 +1,18 @@
+# Keep the Docker build context small and deterministic.
+# Everything in here is NOT copied into the image by `COPY . .`.
+
+node_modules
+dist
+coverage
+.env
+.env.*
+.git
+.gitignore
+.DS_Store
+*.log
+npm-debug.log*
+.vscode
+.idea
+Dockerfile
+.dockerignore
+README.md

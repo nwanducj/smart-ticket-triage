@@ -1,0 +1,90 @@
+# =============================================================================
+# Render Blueprint — Smart Triage
+#
+# Defines two web services (backend + frontend) that deploy independently from
+# a single repo. Push this file to the repo root, then on Render:
+#
+#   New + → Blueprint → connect this repo → apply.
+#
+# Render will create both services and wire them up. You only need to supply
+# the secrets marked `sync: false` below (MONGODB_URI, JWT_SECRET, etc.).
+#
+# Notes:
+#   - Each service runs its own Dockerfile (root dir set per-service).
+#   - The frontend passes NEXT_PUBLIC_API_URL as a Docker BUILD argument,
+#     not a runtime env var. Next.js bakes NEXT_PUBLIC_* into the client
+#     bundle at build time, so it must be set on the build, not the process.
+#   - The backend reads PORT from the env — Render injects it automatically.
+#   - Health checks hit /api/health (backend) and / (frontend).
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend API
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: smart-triage-backend
+    runtime: docker
+    plan: free # upgrade to starter+ for no cold starts
+    region: oregon # change to your preferred region
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # MongoDB connection — set this in the Render dashboard (sync: false
+      # means "don't commit the real value, prompt me on apply").
+      - key: MONGODB_URI
+        sync: false
+
+      # JWT signing secret. Generate with: openssl rand -base64 48
+      - key: JWT_SECRET
+        sync: false
+
+      - key: JWT_EXPIRES_IN
+        value: 8h
+
+      # CORS origin — the public URL of the frontend service below.
+      # After the first deploy, copy the frontend's .onrender.com URL into
+      # this value. (Render can't cross-reference service URLs at blueprint
+      # time, so this is a manual one-time paste.)
+      - key: FRONTEND_URL
+        sync: false
+
+      # Anthropic / LLM config.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: claude-sonnet-4-20250514
+      - key: LLM_MOCK
+        value: "false"
+      - key: LLM_TIMEOUT_MS
+        value: "15000"
+      - key: LLM_MAX_RETRIES
+        value: "2"
+
+  # ---------------------------------------------------------------------------
+  # Frontend (Next.js, standalone output)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: smart-triage-frontend
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: frontend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+
+    # Docker BUILD args — these are passed to `docker build --build-arg ...`
+    # so they're available during `npm run build` and baked into the client
+    # bundle. Change this to the public URL of your backend service once
+    # it's deployed, e.g. https://smart-triage-backend.onrender.com/api
+    dockerBuildArgs:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+
+    envVars:
+      - key: NODE_ENV
+        value: production
