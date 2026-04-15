@@ -1,0 +1,91 @@
+/*
+ * TypeScript Compiler Configuration for Smart Triage Backend
+ * We use strict mode and modern ES2022 target to leverage top-level await,
+ * Array.at(), and other modern JS features while emitting CommonJS for
+ * maximum Node.js compatibility with our toolchain (ts-node, Jest, etc.).
+ */
+{
+  "compilerOptions": {
+    /* --- Language & Emit --- */
+
+    // ES2022 gives us modern features like Array.at(), Object.hasOwn(),
+    // top-level await support, and class fields semantics — all natively
+    // supported in Node 18+ which is our minimum runtime target.
+    "target": "ES2022",
+
+    // CommonJS is required because ts-node-dev, Jest (via ts-jest), and
+    // many Express ecosystem packages still assume CJS require/module.exports.
+    // Switching to ESM would require extensive .mjs renaming and loader flags.
+    "module": "commonjs",
+
+    // Compiled JS goes into dist/ so we can cleanly separate source from output.
+    // The CI pipeline runs `tsc` then `node dist/index.js` in production.
+    "outDir": "dist",
+
+    // rootDir ensures the compiler mirrors the src/ folder structure inside dist/.
+    // Without this, tsc might flatten or mis-nest directories if files outside
+    // src/ are accidentally included.
+    "rootDir": "src",
+
+    /* --- Module Resolution --- */
+
+    // Path aliases let us write `@/config/index` instead of deeply nested
+    // relative imports like `../../../config/index`. This improves readability
+    // and makes refactoring (moving files) far less painful.
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+
+    // resolveJsonModule allows importing JSON files (e.g., package.json for
+    // version info). TypeScript will infer the shape of the JSON as a type.
+    "resolveJsonModule": true,
+
+    // esModuleInterop generates helper code so we can use `import express from 'express'`
+    // instead of `import * as express from 'express'`. Nearly all Express ecosystem
+    // tutorials and docs use default import syntax, so this keeps our code idiomatic.
+    "esModuleInterop": true,
+
+    // skipLibCheck avoids type-checking every .d.ts in node_modules.
+    // This dramatically speeds up compilation — we trust that published
+    // @types packages are correct; if they aren't, we pin versions.
+    "skipLibCheck": true,
+
+    // On case-insensitive file systems (macOS, Windows) it is easy to
+    // accidentally import `./Config` when the file is `./config`. This flag
+    // catches those mistakes so Linux CI does not fail with mysterious errors.
+    "forceConsistentCasingInFileNames": true,
+
+    /* --- Strict Type-Checking --- */
+
+    // strict: true enables the full suite of strict checks (strictNullChecks,
+    // strictBindCallApply, strictFunctionTypes, strictPropertyInitialization,
+    // noImplicitAny, noImplicitThis, alwaysStrict). This catches entire
+    // categories of runtime bugs at compile time.
+    "strict": true,
+
+    // noUncheckedIndexedAccess makes obj[key] return T | undefined instead of T.
+    // This forces us to handle the "key not found" case, which prevents a huge
+    // class of "Cannot read property of undefined" runtime errors — especially
+    // important when dealing with user-supplied data and dynamic lookups.
+    "noUncheckedIndexedAccess": true,
+
+    /* --- Declaration & Source Maps --- */
+
+    // Generate .d.ts files so downstream code (if we ever publish this as a
+    // package or share types with a monorepo frontend) can consume our types.
+    "declaration": true,
+
+    // Source maps let us see original TypeScript line numbers in stack traces
+    // when running the compiled JS in production, making debugging far easier.
+    "sourceMap": true
+  },
+
+  // Only compile files under src/. This excludes node_modules, seeds/,
+  // test config files, and any other top-level scripts from the build output.
+  "include": ["src/**/*"],
+
+  // Explicitly exclude directories that should never be compiled.
+  // node_modules is excluded by default, but being explicit avoids surprises.
+  "exclude": ["node_modules", "dist"]
+}

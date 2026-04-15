@@ -1,0 +1,101 @@
+# =============================================================================
+# Docker Compose — Smart Triage Ticketing System
+#
+# Three services: MongoDB, Backend API, Frontend (Next.js)
+#
+# Usage:
+#   docker-compose up              # Start all services
+#   docker-compose up --build      # Rebuild images and start
+#   docker-compose down            # Stop all services
+#   docker-compose down -v         # Stop and remove volumes (clears DB)
+#
+# After starting:
+#   Frontend:  http://localhost:3000
+#   Backend:   http://localhost:4000/api/health
+#   MongoDB:   mongodb://localhost:27017/smart_triage
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # MongoDB 7
+  # ---------------------------------------------------------------------------
+  mongo:
+    image: mongo:7
+    container_name: smart-triage-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      # Named volume for persistent storage. Data survives container restarts.
+      # Use `docker-compose down -v` to clear the database.
+      - mongo-data:/data/db
+    healthcheck:
+      # mongosh ping checks that the MongoDB server is responding.
+      # Docker uses this to determine when mongo is ready before starting
+      # dependent services.
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Backend API (Express + TypeScript)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smart-triage-backend
+    ports:
+      - "4000:4000"
+    environment:
+      # Database connection — uses the Docker internal hostname "mongo".
+      MONGODB_URI: mongodb://mongo:27017/smart_triage
+      PORT: "4000"
+      NODE_ENV: production
+      # IMPORTANT: Change this in production! This is a demo-only secret.
+      JWT_SECRET: change-this-in-production-use-a-long-random-string
+      JWT_EXPIRES_IN: "24h"
+      # LLM Configuration — set LLM_MOCK=true for demo without API key.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: claude-sonnet-4-20250514
+      LLM_MOCK: ${LLM_MOCK:-true}
+      LLM_TIMEOUT_MS: "15000"
+      LLM_MAX_RETRIES: "2"
+      # CORS — allow frontend to make requests.
+      FRONTEND_URL: http://localhost:3000
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Frontend (Next.js)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: smart-triage-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # The frontend makes API requests from the BROWSER (not from the container),
+      # so this must be the host-accessible URL, not the Docker internal URL.
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api
+    depends_on:
+      backend:
+        condition: service_healthy
+
+# ---------------------------------------------------------------------------
+# Named Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  mongo-data:
+    # Docker-managed volume for MongoDB data persistence.
+    driver: local
