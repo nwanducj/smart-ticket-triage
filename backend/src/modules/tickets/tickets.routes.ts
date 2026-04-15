@@ -3,12 +3,12 @@
  *
  * Defines Express routes for ticket CRUD operations.
  *
- * POST /tickets       — Public: customer submits a ticket (rate-limited).
- * GET  /tickets       — Protected: agents list tickets with filters.
- * GET  /tickets/:id   — Protected: agents view a single ticket.
- * POST /tickets/:id   — Protected: agents update ticket status.
- *                       (Was PATCH — switched to POST to sidestep CORS
- *                       preflight issues and match standard form semantics.)
+ * POST  /tickets       — Public: customer submits a ticket (rate-limited).
+ * GET   /tickets       — Protected: agents list tickets with filters.
+ * GET   /tickets/:id   — Protected: agents view a single ticket.
+ * PATCH /tickets/:id   — Protected: agents update ticket status. CORS
+ *                        preflight is handled explicitly in app.ts so the
+ *                        browser's OPTIONS probe succeeds.
  */
 
 import { Router } from 'express';
@@ -84,16 +84,16 @@ router.get(
 );
 
 /**
- * POST /tickets/:id
+ * PATCH /tickets/:id
  *
  * Pipeline: auth → validate body → update ticket status.
  *
- * We use POST (not PATCH) because PATCH is a non-"simple" CORS method that
- * forces a preflight OPTIONS, which has been flaky across environments.
- * POST is semantically acceptable here ("apply this mutation") and removes
- * an entire class of cross-origin failures.
+ * PATCH is the semantically-correct verb for a partial update. It's a
+ * non-"simple" CORS method so the browser sends an OPTIONS preflight —
+ * app.ts registers an explicit `app.options('*', cors(...))` handler and
+ * spells out `methods`/`allowedHeaders` so the preflight succeeds.
  */
-router.post(
+router.patch(
   '/:id',
   authMiddleware,
   validate(updateTicketSchema),

@@ -36,12 +36,13 @@ import ticketRoutes from './modules/tickets/tickets.routes';
 export function createApp(): express.Application {
   const app = express();
 
-  // --- Security Middleware ---
+  app.use((req, _res, next) => {
+    console.log('Incoming:', req.method, req.url);
+    next();
+  });
 
-  // Helmet sets various HTTP security headers (X-Content-Type-Options,
-  // X-Frame-Options, etc.) to protect against common web vulnerabilities.
-  // It's a single line that covers a dozen security best practices.
-  app.use(helmet());
+
+  // --- Security Middleware ---
 
   // CORS allows the frontend (running on a different port) to make requests
   // to the backend. We configure this EXPLICITLY — earlier we relied on the
@@ -62,6 +63,14 @@ export function createApp(): express.Application {
 
   app.use(cors(corsOptions));
 
+  // app.use((req, res, next) => {
+  //   res.header(
+  //     'Access-Control-Allow-Methods',
+  //     'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS'
+  //   );
+  //   next();
+  // });
+
   // Explicit preflight handler for every route. `app.use(cors())` DOES handle
   // OPTIONS when it sees an OPTIONS request — but only if the request reaches
   // it before being short-circuited elsewhere. Registering an explicit
@@ -69,6 +78,11 @@ export function createApp(): express.Application {
   // of middleware order, which is the fix for the "PATCH fails in browser,
   // works in Postman" class of bug.
   app.options('*', cors(corsOptions));
+
+  // Helmet sets various HTTP security headers (X-Content-Type-Options,
+  // X-Frame-Options, etc.) to protect against common web vulnerabilities.
+  // It's a single line that covers a dozen security best practices.
+  app.use(helmet());
 
   // --- Body Parsing ---
 

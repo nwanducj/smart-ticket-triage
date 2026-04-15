@@ -159,7 +159,7 @@ describe('GET /api/tickets', () => {
 
     // Update the first ticket's status to 'in_progress'.
     await request(app)
-      .post(`/api/tickets/${ticket1.body.data.id}`)
+      .patch(`/api/tickets/${ticket1.body.data.id}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ status: 'in_progress' });
 
@@ -205,13 +205,13 @@ describe('GET /api/tickets', () => {
 // Ticket Update Tests (Protected endpoint)
 // ---------------------------------------------------------------------------
 
-describe('POST /api/tickets/:id', () => {
+describe('PATCH /api/tickets/:id', () => {
   it('should update ticket status', async () => {
     const token = await getAuthToken();
     const ticket = await createTicket();
 
     const res = await request(app)
-      .post(`/api/tickets/${ticket.body.data.id}`)
+      .patch(`/api/tickets/${ticket.body.data.id}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ status: 'in_progress' });
 
@@ -227,7 +227,7 @@ describe('POST /api/tickets/:id', () => {
     const fakeId = '507f1f77bcf86cd799439011';
 
     const res = await request(app)
-      .post(`/api/tickets/${fakeId}`)
+      .patch(`/api/tickets/${fakeId}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ status: 'resolved' });
 
@@ -240,7 +240,7 @@ describe('POST /api/tickets/:id', () => {
     const token = await getAuthToken();
 
     const res = await request(app)
-      .post('/api/tickets/not-a-valid-id')
+      .patch('/api/tickets/not-a-valid-id')
       .set('Authorization', `Bearer ${token}`)
       .send({ status: 'resolved' });
 
@@ -253,7 +253,7 @@ describe('POST /api/tickets/:id', () => {
     const ticket = await createTicket();
 
     const res = await request(app)
-      .post(`/api/tickets/${ticket.body.data.id}`)
+      .patch(`/api/tickets/${ticket.body.data.id}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ status: 'invalid_status' });
 
@@ -265,7 +265,7 @@ describe('POST /api/tickets/:id', () => {
     const ticket = await createTicket();
 
     const res = await request(app)
-      .post(`/api/tickets/${ticket.body.data.id}`)
+      .patch(`/api/tickets/${ticket.body.data.id}`)
       .send({ status: 'resolved' });
 
     expect(res.status).toBe(401);
