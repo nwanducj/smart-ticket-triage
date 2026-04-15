@@ -77,14 +77,16 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
 
-    # Docker BUILD args — these are passed to `docker build --build-arg ...`
-    # so they're available during `npm run build` and baked into the client
-    # bundle. Change this to the public URL of your backend service once
-    # it's deployed, e.g. https://smart-triage-backend.onrender.com/api
-    dockerBuildArgs:
-      - key: NEXT_PUBLIC_API_URL
-        sync: false
-
+    # Runtime env vars only. NEXT_PUBLIC_API_URL is consumed at BUILD time
+    # by Next.js (NEXT_PUBLIC_* is inlined into the browser bundle), so it
+    # must be set as a Docker Build Argument in the Render DASHBOARD:
+    #
+    #   Frontend service → Settings → Docker Build Environment →
+    #     NEXT_PUBLIC_API_URL = https://<backend>.onrender.com/api
+    #
+    # Then trigger a manual deploy. Build-arg changes don't auto-rebuild.
+    # (render.yaml's schema has no field for docker build args — that's why
+    # `dockerBuildArgs:` failed validation.)
     envVars:
       - key: NODE_ENV
         value: production
