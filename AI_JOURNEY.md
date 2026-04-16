@@ -86,7 +86,59 @@ The error handler needed to catch Mongoose-specific errors (CastError, Validatio
 
 ---
 
-## 5. Time Savings
+## 5. Notable Human Contributions
+
+AI was the implementation muscle, but the shape of the final product was driven by a steady stream of human judgment calls — product decisions, UX instincts, deployment pragmatism, and architectural bets that the AI would not have taken on its own. The most consequential are recorded below so future readers can see where the human was in the loop.
+
+### Product & UX Direction
+
+- **Intercom-style floating support widget.** Called for replacing the plain "submit a ticket" form with a bottom-right floating action button that expands into a compact chat-like panel, including a "Submit another ticket" state after success. The widget was then scoped to the home page only — dashboard users should never see a customer-facing submission entry point. This pushed a meaningful refactor: lifting the form out of a page component into a self-contained widget with its own state machine (collapsed → form → thank-you → form).
+
+- **Home page redesigned as a simulated 404.** Turned the default landing page into a deliberate "error page" metaphor whose only CTA is the chat widget, with a subtle agent-login link tucked below. This made the deployment story cleaner — there's no ambiguity about who the two surfaces are for.
+
+- **Login as a true standalone page.** Explicitly rejected the initial boxed-card login, insisted on a flattened layout with no "back to home" link. The result: login reads as a first-class destination rather than a modal bolted onto the marketing site.
+
+- **Bigger, heavier typography and chunkier controls.** Called out when headings and action buttons felt thin, driving a pass that bumped title weight, control heights, and tap targets across the app.
+
+- **Select labels must be human-readable.** Noticed that base-ui's `Select.Value` was rendering the raw `"all"` token instead of "All Statuses" in both filters and the inline table row. Led to discovering the base-ui vs. Radix API difference (base-ui requires a render function) and a project-wide fix.
+
+- **System-wide font switch to Source Sans 3.** One decisive call that unified sans, mono, and heading stacks under a single Google font loaded through `next/font/google`.
+
+### Dashboard & Observability
+
+- **Overview tiles for ticket counts by status.** Recognized that an agent opening the dashboard needs a "weather report" before diving into rows. Drove the creation of `TicketOverview` — a grid of stat tiles (Total, Open, In Progress, Waiting, Resolved, Closed, Critical).
+
+- **Agent attribution on every row.** Pushed for showing *who* last acted on each ticket — not just what changed. This reshaped the data model: a new `lastUpdatedBy` snapshot on the ticket for fast table display, plus a full `history[]` audit log on a new `GET /tickets/:id/history` endpoint. Chose snapshot-at-write over live join so the record stays accurate even if an agent later changes name or leaves.
+
+- **Audit log dialog.** Off the back of the attribution work, called for a timeline view showing every status change and classification event with actor name, timestamp, and transition pill. Implemented as a lazy-loaded `TicketHistoryDialog` so the query only fires when opened.
+
+### Responsiveness
+
+- **Complete mobile responsiveness, not "good enough."** Rejected a half-measure responsive pass and asked for full phone-grade support. This drove the dual-layout pattern in `TicketTable`: a `md:hidden` card stack built on `TicketCard` for phones and a traditional table from `md` up, with the filter bar, header, pagination, and dialog all flexing independently. No horizontal scrolling anywhere below the breakpoint.
+
+### Deployment & Infrastructure
+
+- **PATCH must work in the browser, not just Postman.** Diagnosed the "works in Postman, fails in Chrome" symptom as a CORS preflight problem, insisted on a real fix rather than routing around the issue. After an initial attempt (explicit `methods`, `allowedHeaders`, `app.options('*')`) still appeared to fail, made the call to switch to POST temporarily to unblock work — then later reverted to PATCH once the preflight cache and stale `dist/` root cause were understood. The final state keeps PATCH and its semantic correctness.
+
+- **Render blueprint for one-click deploy.** Directed a deployment path using Render with both services provisioned from a single `render.yaml`. Caught a legitimate bug in an earlier draft: `dockerBuildArgs` is not a real field in Render's schema (documented that Docker build args must be set via the dashboard, not the blueprint). Pushed back on the documentation until it reflected reality.
+
+- **Dockerfiles for deployment portability.** Asked explicitly for Dockerfiles that would cleanly deploy to Render and also Cloud Run with minimal delta. This led to removing hard-coded `NEXT_PUBLIC_API_URL`, converting it to a build `ARG`, removing the backend `HEALTHCHECK` directive (Render/Cloud Run use their own probes), and binding to `$PORT` rather than a fixed port — all of which make the images truly portable.
+
+- **Frontend not on GitHub — investigate.** Caught that only a gitlink existed for the `frontend/` directory (mode `160000`, no `.gitmodules`, no inner `.git`) and asked for investigation rather than a cargo-cult "try committing again." Root cause turned out to be a dead submodule pointer; fix was `git rm --cached frontend && git add frontend/`.
+
+### Architecture
+
+- **Switch to the OpenAI-compatible Chat Completions API.** Raised the concern that being locked to the Anthropic Messages SDK meant *code changes* every time the team wanted to try a new model. Drove the migration to a generic `/chat/completions` client (`openai` SDK pointed at a configurable `LLM_BASE_URL`) so the model is now controlled entirely by three environment variables — `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`. Benefits:
+  - **Zero-code model swaps**: change the env var, restart, done. No rebuild, no redeploy code path.
+  - **Zero-code provider swaps**: point `LLM_BASE_URL` at OpenAI, OpenRouter (100+ models under one key), Groq, Together, or a local Ollama — the application is unchanged.
+  - **No cost spike for experiments**: try a cheaper model for a week without touching the deploy pipeline; if quality holds, keep it.
+  - **Runtime flexibility**: different deployments (prod vs. staging vs. a customer demo) can run different models without branching code.
+
+  Also gained `response_format: { type: 'json_object' }` — compliant providers now enforce JSON output at the API level, eliminating a class of parse errors the service previously had to defend against manually.
+
+---
+
+## 6. Time Savings
 
 | Task                      | Estimated Manual Time | With AI     | Savings |
 |--------------------------|----------------------|-------------|---------|

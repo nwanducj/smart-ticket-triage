@@ -1,14 +1,16 @@
 /**
  * LLM Classification Service
  *
- * The core AI integration that classifies support tickets using Claude
- * (Anthropic API). This is the most critical backend component — it must
- * handle failures gracefully because the LLM is an external dependency
- * outside our control.
+ * The core AI integration that classifies support tickets. Talks to any
+ * OpenAI-compatible `/chat/completions` endpoint — OpenAI, OpenRouter,
+ * Groq, Together, local Ollama/vLLM, etc. We deliberately use the generic
+ * Chat Completions API (not a provider-specific SDK) so the model and the
+ * provider can both be swapped at runtime via env vars (LLM_MODEL,
+ * LLM_BASE_URL, LLM_API_KEY) with no code changes, no rebuild, no redeploy.
  *
  * Architecture:
  * 1. Check if mock mode is enabled → use mock classifier.
- * 2. Send ticket to Claude with a carefully crafted prompt.
+ * 2. Send ticket to the completions endpoint with a carefully crafted prompt.
  * 3. Parse the structured JSON response.
  * 4. Retry on transient failures (exponential backoff).
  * 5. Fall back to keyword classifier if all retries fail.
@@ -18,7 +20,7 @@
  * The caller doesn't need to handle LLM failures; this service absorbs them.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { config } from '../../config';
 import { logger } from '../../utils/logger';
 import { TICKET_CATEGORIES, TICKET_PRIORITIES, TicketCategory, TicketPriority } from '../../types/ticket';
@@ -28,26 +30,36 @@ import { fallbackClassify } from './llm.fallback';
 import { mockClassify } from './llm.mock';
 
 // ---------------------------------------------------------------------------
-// Anthropic Client (lazy initialization)
+// Completions Client (lazy initialization)
 // ---------------------------------------------------------------------------
 
 /**
- * Lazily initialized Anthropic client.
+ * Lazily initialized OpenAI-compatible client.
+ *
+ * The `openai` package is the de-facto standard SDK for the Chat Completions
+ * API contract. Because the contract is open, every major provider (and
+ * most self-hosted inference servers) speaks it — pointing `baseURL` at
+ * OpenRouter or a local Ollama instance "just works" with the same SDK.
  *
  * We don't initialize at module load because:
  * 1. In test/mock mode, we never need the real client.
  * 2. The API key might not be available at import time.
  * 3. Lazy init means import-time errors don't crash the app.
  */
-let anthropicClient: Anthropic | null = null;
+let client: OpenAI | null = null;
 
-function getClient(): Anthropic {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({
-      apiKey: config.ANTHROPIC_API_KEY,
+function getClient(): OpenAI {
+  if (!client) {
+    client = new OpenAI({
+      apiKey: config.LLM_API_KEY,
+      baseURL: config.LLM_BASE_URL,
+      timeout: config.LLM_TIMEOUT_MS,
+      // The SDK has its own retry logic; we disable it because we implement
+      // our own retry + fallback flow below and don't want double-retries.
+      maxRetries: 0,
     });
   }
-  return anthropicClient;
+  return client;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,11 +103,12 @@ export async function classifyTicket(
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     try {
       const startTime = Date.now();
-      const result = await callClaude(title, description);
+      const result = await callCompletions(title, description);
       const duration = Date.now() - startTime;
 
       logger.info('LLM classification succeeded', {
         attempt,
+        model: config.LLM_MODEL,
         durationMs: duration,
         category: result.category,
         priority: result.priority,
@@ -109,6 +122,7 @@ export async function classifyTicket(
       logger.warn('LLM classification attempt failed', {
         attempt,
         maxRetries: maxRetries + 1,
+        model: config.LLM_MODEL,
         error: lastError.message,
       });
 
@@ -134,48 +148,46 @@ export async function classifyTicket(
 }
 
 // ---------------------------------------------------------------------------
-// Claude API Call
+// Completions API Call
 // ---------------------------------------------------------------------------
 
 /**
- * Make a single classification request to the Claude API.
+ * Make a single classification request to the chat completions endpoint.
+ *
+ * Uses `response_format: { type: 'json_object' }` so compliant providers
+ * enforce JSON output at the API level — eliminating the "LLM wrapped JSON
+ * in prose" class of parse errors. Providers that don't support this flag
+ * ignore it, and our downstream cleanup still handles markdown fences.
  *
  * @param title - Ticket title.
  * @param description - Ticket description.
  * @returns Parsed and validated ClassificationResult.
  * @throws Error on API failure, timeout, or unparseable response.
  */
-async function callClaude(
+async function callCompletions(
   title: string,
   description: string
 ): Promise<ClassificationResult> {
-  const client = getClient();
-
-  // Call the Anthropic Messages API.
-  // We use a low max_tokens since classification responses are short JSON.
-  const message = await client.messages.create({
+  const completion = await getClient().chat.completions.create({
     model: config.LLM_MODEL,
+    // Low max_tokens — classification responses are short JSON.
     max_tokens: 256,
-    system: CLASSIFICATION_SYSTEM_PROMPT,
+    // Low temperature — classification is a deterministic task; we want
+    // the same ticket to produce the same category on every call.
+    temperature: 0,
+    response_format: { type: 'json_object' },
     messages: [
-      {
-        role: 'user',
-        content: buildUserPrompt(title, description),
-      },
+      { role: 'system', content: CLASSIFICATION_SYSTEM_PROMPT },
+      { role: 'user', content: buildUserPrompt(title, description) },
     ],
   });
 
-  // Extract the text content from the response.
-  // The Messages API returns an array of content blocks; we expect
-  // exactly one text block containing our JSON.
-  const textBlock = message.content.find((block) => block.type === 'text');
-
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('LLM response did not contain a text block');
+  const text = completion.choices[0]?.message?.content;
+  if (!text) {
+    throw new Error('LLM response did not contain any content');
   }
 
-  // Parse the JSON response from the LLM.
-  const classification = parseClassificationResponse(textBlock.text);
+  const classification = parseClassificationResponse(text);
 
   return {
     ...classification,
@@ -190,12 +202,10 @@ async function callClaude(
 /**
  * Parse and validate the LLM's JSON response.
  *
- * The LLM is instructed to return strict JSON, but LLMs can be unreliable
- * with format compliance. We handle common issues:
- * - Strip markdown code fences if present (```json ... ```)
- * - Validate category against our enum (reject hallucinated values)
- * - Validate priority against our enum
- * - Clamp confidence to [0, 1] range
+ * Even with response_format=json_object, we defensively handle:
+ * - Markdown code fences (```json ... ```) — some providers still add them.
+ * - Hallucinated category/priority values — reject anything not in our enum.
+ * - Out-of-range confidence — clamp to [0, 1].
  *
  * @param raw - The raw text output from the LLM.
  * @returns A validated ClassificationResult (without usedFallback — caller sets it).
@@ -205,13 +215,11 @@ function parseClassificationResponse(
   raw: string
 ): Omit<ClassificationResult, 'usedFallback'> {
   // Strip markdown code fences if the LLM wrapped the JSON in them.
-  // Despite explicit instructions, models sometimes add ```json ... ```.
   let cleaned = raw.trim();
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
   }
 
-  // Parse JSON. If this throws, the caller's retry logic will catch it.
   let parsed: LLMRawResponse;
   try {
     parsed = JSON.parse(cleaned);

@@ -46,14 +46,27 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('8h'),
 
   // --- AI / LLM ---
-  // The Anthropic API key. Default to empty string so the app can start
-  // in mock mode without a real key. The LLM service should check
-  // LLM_MOCK before attempting real API calls.
-  ANTHROPIC_API_KEY: z.string().default(''),
+  // Generic completions-API configuration. We talk to any provider that
+  // implements the OpenAI-compatible `/chat/completions` contract: OpenAI,
+  // OpenRouter, Groq, Together, local Ollama/vLLM, etc. This means the
+  // model can be swapped at runtime via LLM_MODEL without code changes,
+  // and the provider can be swapped via LLM_BASE_URL without redeploy.
 
-  // Which Claude model to invoke. Defaulting to Sonnet for the best
-  // speed-to-quality ratio on short classification tasks.
-  LLM_MODEL: z.string().default('claude-sonnet-4-20250514'),
+  // Base URL of the completions endpoint. Defaults to OpenAI, but point
+  // it at OpenRouter (https://openrouter.ai/api/v1) for access to 100+
+  // models including Claude/Gemini/Llama from one account.
+  LLM_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
+
+  // API key for whichever provider LLM_BASE_URL points to. Optional so
+  // the app still starts in mock mode without a real key.
+  LLM_API_KEY: z.string().default(''),
+
+  // Which model to invoke — the string is passed through to the provider
+  // unchanged. Examples by provider:
+  //   OpenAI:     gpt-4o-mini, gpt-4o, gpt-4.1
+  //   OpenRouter: anthropic/claude-sonnet-4, google/gemini-2.0-flash
+  //   Groq:       llama-3.1-70b-versatile
+  LLM_MODEL: z.string().default('gpt-4o-mini'),
 
   // When "true", the LLM service returns canned responses. This avoids
   // burning API credits during development and keeps tests deterministic.
