@@ -33,7 +33,15 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src/ ./src/
 
+# Also copy seeds/ so the `seed` compose service (which targets this
+# builder stage) can run `npm run seed` — ts-node lives in devDeps and is
+# already installed by the `npm ci` above, so this stage is self-sufficient
+# for the seed job without bloating the runner image below.
+COPY seeds/ ./seeds/
+
 # Compile TypeScript → JavaScript into the dist/ directory.
+# The tsconfig `include` is scoped to src/, so seeds/ is intentionally NOT
+# compiled — the seed runs via ts-node at the source level.
 RUN npm run build
 
 # ---------------------------------------------------------------------------

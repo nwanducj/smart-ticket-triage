@@ -35,6 +35,12 @@ interface AuthContextType {
   loading: boolean
   /** Log in with email and password. Stores JWT and agent info. */
   login: (email: string, password: string) => Promise<void>
+  /**
+   * Register a new agent and automatically log them in.
+   * The backend returns the same {agent, token} shape as /auth/login,
+   * so post-register the user is immediately signed in — no second round-trip.
+   */
+  register: (name: string, email: string, password: string) => Promise<void>
   /** Clear authentication state and redirect to login. */
   logout: () => void
   /** True if an agent is currently logged in. */
@@ -95,6 +101,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /**
+   * Register a new agent account and sign them in.
+   *
+   * The backend's /auth/register returns the same shape as /auth/login
+   * ({agent, token}), so we can share the post-auth plumbing with login.
+   * No second API call is needed to establish the session.
+   */
+  const register = useCallback(
+    async (name: string, email: string, password: string) => {
+      const response = await apiClient<ApiResponse<AuthResponse>>(
+        "/auth/register",
+        {
+          method: "POST",
+          body: JSON.stringify({ name, email, password }),
+        }
+      )
+
+      setToken(response.data.token)
+      setAgent(response.data.agent)
+    },
+    []
+  )
+
+  /**
    * Log out — clear token and agent state.
    */
   const logout = useCallback(() => {
@@ -108,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         agent,
         loading,
         login,
+        register,
         logout,
         isLoggedIn: !!agent,
       }}

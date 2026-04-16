@@ -10,6 +10,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { AlertCircle, Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -140,8 +141,21 @@ export function LoginForm() {
         </Button>
       </form>
 
+      {/* Sign-up cross-link. Sits above the demo hint so it's the primary
+          secondary action — the demo creds are a convenience for reviewers,
+          not the intended path for new agents. */}
+      <p className="mt-8 text-center text-sm text-muted-foreground">
+        Don&apos;t have an account?{" "}
+        <Link
+          href="/register"
+          className="font-medium text-foreground underline-offset-4 hover:underline"
+        >
+          Sign up
+        </Link>
+      </p>
+
       {/* Demo credentials — flat helper text, no bordered callout. */}
-      <p className="mt-8 text-center text-xs text-muted-foreground">
+      <p className="mt-3 text-center text-xs text-muted-foreground">
         Demo credentials:{" "}
         <span className="font-mono text-foreground">
           agent@smarttriage.com&nbsp;/&nbsp;password123
