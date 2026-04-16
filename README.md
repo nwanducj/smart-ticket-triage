@@ -2,6 +2,19 @@
 
 An intelligent support ticket management system that uses Claude (Anthropic's LLM) to automatically categorize and prioritize incoming customer tickets, enabling support agents to work more efficiently.
 
+
+---
+
+## Hosted URLs
+
+- https://smart-triage-backend.onrender.com/api/health
+
+---
+
+- https://smart-triage-frontend.onrender.com
+
+
+
 ---
 
 ## Architecture Overview
