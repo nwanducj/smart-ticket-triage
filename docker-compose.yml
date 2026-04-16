@@ -57,7 +57,8 @@ services:
       JWT_SECRET: change-this-in-production-use-a-long-random-string
       JWT_EXPIRES_IN: "24h"
       # LLM Configuration — set LLM_MOCK=true for demo without API key.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_MODEL: claude-sonnet-4-20250514
       LLM_MOCK: ${LLM_MOCK:-true}
       LLM_TIMEOUT_MS: "15000"
@@ -73,6 +74,17 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+      
+  seed:
+    build: ./backend              # Reuse the backend image — same code, same deps
+    command: npm run seed         # Override the default CMD
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/smart_triage
+    profiles: ["seed"]            # Only runs when explicitly invoked
+    restart: "no"                 # Don't restart after it exits
 
   # ---------------------------------------------------------------------------
   # Frontend (Next.js)
